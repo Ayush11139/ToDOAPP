@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI To‑Do</title>
+  <style>
+    :root { --radius: 16px; --pad: 12px; --shadow: 0 6px 20px rgba(0,0,0,.06); }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:#f7f7fb; color:#111827; }
+    .wrap { max-width: 860px; margin: 32px auto; padding: 0 16px; }
+    .row { display:flex; gap:12px; align-items:center; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--pad); }
+    .btn { border:1px solid #e5e7eb; background:#fff; border-radius: 999px; padding:8px 12px; cursor:pointer; }
+    .btn.primary { background:#111827; color:#fff; }
+    .btn.ghost { background:transparent; }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    input, select { border:1px solid #e5e7eb; border-radius: 12px; padding:10px 12px; outline:none; }
+    input:focus, select:focus { border-color:#111827; }
+    .muted { color:#6b7280; font-size: 12px; }
+    .title { font-size:28px; font-weight:800; margin: 0 0 8px; }
+    .toolbar { gap:8px; flex-wrap:wrap; }
+    .chip { padding:6px 10px; border-radius:999px; border:1px solid #e5e7eb; cursor:pointer; }
+    .chip.active { background:#111827; color:#fff; }
+    .todo { display:flex; gap:12px; align-items:flex-start; padding:10px; border-radius: 14px; border:1px solid #e5e7eb; }
+    .todo.done { opacity:.6; text-decoration: line-through; }
+    .todo .grow { flex:1; min-width: 0; }
+    .todo small { color:#6b7280; }
+    .badge { font-size: 11px; padding:4px 8px; border-radius:999px; border:1px solid #e5e7eb; }
+    .list { display:grid; gap:10px; }
+    .empty { text-align:center; padding:40px; color:#9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="row" style="justify-content:space-between; margin-bottom:16px;">
+      <h1 class="title">AI To‑Do</h1>
+      <button id="clearDone" class="btn">Clear done</button>
+    </header>
+    <section class="card">
+      <div class="row" style="flex-wrap:wrap;">
+        <input id="taskText" placeholder="Add a task..." style="flex:1; min-width:220px;">
+        <input id="taskDue" type="date">
+        <select id="taskPriority">
+          <option>Low</option>
+          <option selected>Medium</option>
+          <option>High</option>
+        </select>
+        <button id="addBtn" class="btn primary">Add</button>
+      </div>
+    </section>
+    <section class="row toolbar" style="margin:12px 0;">
+      <div class="row card" style="gap:6px;">
+        <span class="muted">Filter</span>
+        <button class="chip active" data-filter="All">All</button>
+        <button class="chip" data-filter="Active">Active</button>
+        <button class="chip" data-filter="Completed">Completed</button>
+      </div>
+      <div class="row card" style="gap:6px; flex:1; min-width:220px;">
+        <span class="muted">Search</span>
+        <input id="search" placeholder="Search tasks..." style="flex:1; border:none; outline:none;">
+      </div>
+    </section>
+    <section id="list" class="list"></section>
+    <div id="empty" class="empty" style="display:none;">No tasks. Add one above ✨</div>
+    <footer class="row" style="justify-content:space-between; margin-top:12px;">
+      <span id="remaining" class="muted">0 remaining</span>
+      <span class="muted">Local‑first • Autosaves</span>
+    </footer>
+  </div>\n\n  <script>\n    const STORAGE_KEY = 'ai-todo-v1';\n    const $ = sel => document.querySelector(sel);\n\n    const state = {\n      todos: [],\n      filter: 'All',\n      query: ''\n    };\n\n    function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }\n\n    function load() {\n      try { state.todos = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { state.todos = []; }\n    }\n\n    function save() {\n      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.todos));\n    }\n\n    function addTodo() {\n      const text = $('#taskText').value.trim();\n      if (!text) return;\n      const due = $('#taskDue').value || undefined;\n      const priority = $('#taskPriority').value;\n      state.todos.unshift({ id: uid(), text, done: false, due, priority, createdAt: Date.now() });\n      $('#taskText').value=''; $('#taskDue').value=''; $('#taskPriority').value='Medium';\n      save(); render();\n    }\n\n    function toggle(id) { const t = state.todos.find(t => t.id === id); if (t) { t.done = !t.done; save(); render(); } }\n    function remove(id) { state.todos = state.todos.filter(t => t.id !== id); save(); render(); }\n    function edit(id, patch) { const i = state.todos.findIndex(t => t.id === id); if (i>-1) { state.todos[i] = { ...state.todos[i], ...patch }; save(); render(); } }\n    function clearCompleted() { state.todos = state.todos.filter(t => !t.done); save(); render(); }\n\n    function filtered() {\n      let list = [...state.todos];\n      if (state.filter==='Active') list = list.filter(t=>!t.done);\n      if (state.filter==='Completed') list = list.filter(t=>t.done);\n      if (state.query.trim()) { const q=state.query.toLowerCase(); list=list.filter(t=>t.text.toLowerCase().includes(q)); }\n      const pScore = p => ({High:0, Medium:1, Low:2})[p] || 1;\n      list.sort((a,b)=>{ const pr=pScore(a.priority)-pScore(b.priority); if (pr) return pr; const da=a.due?Date.parse(a.due):Infinity; const db=b.due?Date.parse(b.due):Infinity; if (da!==db) return da-db; return b.createdAt-a.createdAt; });\n      return list;\n    }\n\n    function todoTemplate(t) {\n      const due = t.due ? `<span class=\\"badge\\">${t.due}</span>` : '';\n      return `<div class=\\"todo ${t.done?'done':''}\\">\n        <button class=\\"btn\\" aria-label=\\"toggle\\" data-act=\\"toggle\\" data-id=\\"${t.id}\\">${t.done?'✓':'○'}</button>\n        <div class=\\"grow\\">\n          <div style=\\"font-weight:600; word-break:break-word;\\">${escapeHtml(t.text)}</div>\n          <div class=\\"row\\"><small>Priority</small><span class=\\"badge\\">${t.priority}</span>${due}</div>\n        </div>\n        <div class=\\"row\\">\n          <button class=\\"btn\\" data-act=\\"edit\\" data-id=\\"${t.id}\\">Edit</button>\n          <button class=\\"btn\\" data-act=\\"delete\\" data-id=\\"${t.id}\\">Delete</button>\n        </div>\n      </div>`;\n    }\n\n    function render() {\n      const list = filtered();\n      $('#list').innerHTML = list.map(todoTemplate).join('');\n      $('#empty').style.display = list.length? 'none' : 'block';\n      $('#remaining').textContent = `${state.todos.filter(t=>!t.done).length} remaining`;\n    }\n\n    function escapeHtml(str){ return str.replace(/[&<>\\\"]+/g, s=>({\"&\":\"&amp;\",\"<\":\"&lt;\",\">\":\"&gt;\",\"\\\"\":\"&quot;\"}[s])); }\n\n    // Event delegation\n    document.addEventListener('click', (e)=>{\n      const el = e.target.closest('[data-act]');\n      if (!el) return;\n      const id = el.getAttribute('data-id');\n      const act = el.getAttribute('data-act');\n      if (act==='toggle') toggle(id);\n      if (act==='delete') remove(id);\n      if (act==='edit') openEditor(id);\n      if (el.matches('[data-filter]')) {\n        document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));\n        el.classList.add('active');\n        state.filter = el.getAttribute('data-filter');\n        render();\n      }\n    });\n\n    function openEditor(id){\n      const t = state.todos.find(t=>t.id===id); if(!t) return;\n      const text = prompt('Edit task', t.text); if (text===null) return;\n      const due = prompt('Due date (YYYY-MM-DD or empty)', t.due || '');\n      const priority = prompt('Priority (Low/Medium/High)', t.priority) || t.priority;\n      edit(id, { text: text.trim()||t.text, due: (due||'').trim()||undefined, priority });\n    }\n\n    $('#addBtn').addEventListener('click', addTodo);\n    $('#taskText').addEventListener('keydown', e=>{ if(e.key==='Enter') addTodo(); });\n    $('#clearDone').addEventListener('click', clearCompleted);\n    $('#search').addEventListener('input', e=>{ state.query = e.target.value; render(); });\n    document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click', ()=>{}));\n\n    load(); render();\n  </script>\n</body>\n</html>
